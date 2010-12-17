@@ -1,0 +1,113 @@
+C++ callbacks to member functions
+
+Posted by Cliff Brake on 2010-12-16 |
+
+URL: http://bec-systems.com/site/760/c-callbacks-to-member-functions
+
+How to properly do callbacks to C++ member functions is something that has intrigued me for some time now.  There are a number of solutions, none of which I really liked.  But now with the std::tr1::function and std::tr1::bind functions, there appears to be a clean solution.
+
+In the past, if you wanted a callback to a C++ member function a typical approach was to create a static function wrapper as described here.  However, this is ugly, and a step backwards from the capabilities of plain old C.
+
+std::tr1::function is a function wrapper that can be used to create function objects for a number of scenarios.  We are interested in representing class member functions.
+
+#include <tr1/functional>
+
+struct X {
+	int foo(int);
+};
+
+std::tr1::function<int (X*, int)> f;
+
+f = &X::foo;
+
+X x;
+f(&x, 6);
+
+f() is now a simple function representation that can be passed around, etc.  However, what we don’t like is the reference to the struct X type, which makes it much less generic.  This is where the std::tr1::bind function comes in.  With bind, we can dynamically bind one function to another, and re-arrange the arguments, etc.  So to make a generic portable function that points to X::foo(), we can do something like the following.
+
+#include <tr1/functional>
+
+struct X {
+	int foo(int);
+};
+
+std::tr1::function<int (int)> f;
+
+X x;
+f = std::tr1::bind(&X::foo, &x, _1);
+
+f(6);
+
+Now, f() is a very generic function that could be used in various interfaces without specifically referencing struct X.
+
+A more complete example of how callbacks might work is given below:
+
+#include <iostream>
+#include <tr1/functional> 
+
+struct B
+{
+  std::tr1::function <void ()> _callback;
+
+  void reg_callback(std::tr1::function <void ()> callback)
+  {
+    _callback = callback;
+  }
+
+  void unreg_callback()
+  {
+    _callback = NULL;
+  }
+
+  void process() {
+    // simply calls callback
+    if (_callback)
+      _callback();
+  }
+};
+
+struct A
+{
+  B * _b;
+
+  A(B * b) :
+    _b(b)
+  {
+    std::tr1::function<void()> callback;
+    callback = std::tr1::bind(&A::callback, this);
+    b->reg_callback(callback);
+  }
+
+  ~A()
+  {
+    _b->unreg_callback();
+  }
+
+  void callback() {
+    std::cout << "A::callback called\n";
+  }
+
+  void process() {
+    _b->process();
+  }
+}; 
+
+int main()
+{
+  B * b = new B();
+  A * a = new A(b); 
+
+  // the following is example where object b calls
+  // back into a method
+  // in object a
+  a->process();
+
+  // now delete object a, and verify the callback
+  // in B does not crash or still get called
+  delete a;
+
+  // now b should not execute the callback
+  b->process();
+}
+
+In the above example, the callback in a will be called once.
